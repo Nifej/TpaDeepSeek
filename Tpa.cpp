@@ -3,6 +3,7 @@
 #include <sstream>
 #include <string>
 #include <cstdlib>
+#include <ctime>
 
 using namespace std;
 
@@ -18,108 +19,59 @@ struct Aluno {
 
 struct No {
     Aluno aluno;
-    No* anterior;
     No* proximo;
 };
 
 class Lista {
 private:
     No* inicio;
-    No* fim;
 
 public:
     Lista() {
         inicio = NULL;
-        fim = NULL;
     }
 
-    bool existeCPFouMatricula(const string& cpf, const string& matricula) {
+    bool existeCPF(const string& cpf) {
         No* atual = inicio;
         while (atual != NULL) {
-            if (atual->aluno.cpf == cpf || atual->aluno.matricula == matricula) {
-                return true;
-            }
+            if (atual->aluno.cpf == cpf) return true;
             atual = atual->proximo;
         }
         return false;
     }
 
     void inserirOrdenado(Aluno a) {
-        if (existeCPFouMatricula(a.cpf, a.matricula)) {
-            cout << "ERRO: Já existe aluno com o CPF ou Matrícula informados.\n";
+        if (existeCPF(a.cpf)) {
+            cout << "ERRO: Já existe aluno com este CPF.\n";
             return;
         }
 
         No* novo = new No;
         novo->aluno = a;
-        novo->anterior = NULL;
         novo->proximo = NULL;
 
-        if (inicio == NULL) { // lista vazia
-            inicio = fim = novo;
+        if (inicio == NULL || a.nome < inicio->aluno.nome) {
+            novo->proximo = inicio;
+            inicio = novo;
             return;
         }
 
         No* atual = inicio;
-        while (atual != NULL && atual->aluno.nome < a.nome) {
+        while (atual->proximo != NULL && atual->proximo->aluno.nome < a.nome) {
             atual = atual->proximo;
         }
 
-        if (atual == NULL) { // insere no fim
-            fim->proximo = novo;
-            novo->anterior = fim;
-            fim = novo;
-        }
-        else if (atual == inicio) { // insere no início
-            novo->proximo = inicio;
-            inicio->anterior = novo;
-            inicio = novo;
-        }
-        else { // insere no meio
-            novo->proximo = atual;
-            novo->anterior = atual->anterior;
-            atual->anterior->proximo = novo;
-            atual->anterior = novo;
-        }
+        novo->proximo = atual->proximo;
+        atual->proximo = novo;
     }
 
-    No* buscarPorMatricula(const string& matricula) {
+    void exibirLista() {
         No* atual = inicio;
         while (atual != NULL) {
-            if (atual->aluno.matricula == matricula) return atual;
+            exibirAluno(atual->aluno);
+            cout << "-------------------\n";
             atual = atual->proximo;
         }
-        return NULL;
-    }
-
-    No* buscarPorCPF(const string& cpf) {
-        No* atual = inicio;
-        while (atual != NULL) {
-            if (atual->aluno.cpf == cpf) return atual;
-            atual = atual->proximo;
-        }
-        return NULL;
-    }
-
-    void remover(No* no) {
-        if (no == NULL) return;
-
-        if (no == inicio && no == fim) { // único elemento
-            inicio = fim = NULL;
-        }
-        else if (no == inicio) { // início
-            inicio = inicio->proximo;
-            inicio->anterior = NULL;
-        }
-        else if (no == fim) { // fim
-            fim = fim->anterior;
-            fim->proximo = NULL;
-        }
-        else { // meio
-            no->anterior->proximo = no->proximo;
-            no->proximo->anterior = no->anterior;
-        }
-        delete no;
     }
 
     void exibirAluno(const Aluno& a) {
@@ -131,19 +83,18 @@ public:
              << "Curso: " << a.curso << "\n"
              << "Cidade: " << a.cidade << "\n";
     }
-
-    void exibirLista() {
-        No* atual = inicio;
-        while (atual != NULL) {
-            exibirAluno(atual->aluno);
-            cout << "-----------------------\n";
-            atual = atual->proximo;
-        }
-    }
 };
 
-// Função para ler CSV
-void carregarCSV(const string& nomeArquivo, Lista& lista) {
+// pega os dois dígitos verificadores do CPF (últimos dois números)
+int extrairIndiceCPF(const string& cpf) {
+    if (cpf.size() < 2) return 0;
+
+    string doisUltimos = cpf.substr(cpf.size() - 2); 
+    return atoi(doisUltimos.c_str()) % 100; // garante índice 0..99
+}
+
+// Função para carregar CSV no vetor
+void carregarCSV(const string& nomeArquivo, Lista vetor[]) {
     ifstream arquivo(nomeArquivo.c_str());
     if (!arquivo.is_open()) {
         cout << "Erro ao abrir arquivo.\n";
@@ -167,67 +118,30 @@ void carregarCSV(const string& nomeArquivo, Lista& lista) {
         a.nota = atof(notaStr.c_str());
         a.idade = atoi(idadeStr.c_str());
 
-        lista.inserirOrdenado(a);
+        int indice = extrairIndiceCPF(a.cpf);
+        vetor[indice].inserirOrdenado(a);
     }
     arquivo.close();
 }
 
 int main() {
-    Lista lista;
+    Lista vetor[100]; // vetor de 100 listas
 
-    carregarCSV("alunos.csv", lista);
+    clock_t inicio = clock(); // início da medição
 
-    int opcao;
-    do {
-        cout << "\n--- MENU ---\n";
-        cout << "1 - Buscar por matrícula\n";
-        cout << "2 - Buscar por CPF\n";
-        cout << "3 - Exibir todos os alunos\n";
-        cout << "0 - Sair\n";
-        cout << "Escolha: ";
-        cin >> opcao;
-        cin.ignore();
+    carregarCSV("alunos.csv", vetor);
 
-        if (opcao == 1) {
-            string matricula;
-            cout << "Digite a matrícula: ";
-            getline(cin, matricula);
-            No* encontrado = lista.buscarPorMatricula(matricula);
-            if (encontrado != NULL) {
-                lista.exibirAluno(encontrado->aluno);
-                cout << "Deseja remover este aluno? (s/n): ";
-                char resp;
-                cin >> resp;
-                if (resp == 's' || resp == 'S') {
-                    lista.remover(encontrado);
-                    cout << "Aluno removido.\n";
-                }
-            } else {
-                cout << "Aluno não encontrado.\n";
-            }
-        }
-        else if (opcao == 2) {
-            string cpf;
-            cout << "Digite o CPF: ";
-            getline(cin, cpf);
-            No* encontrado = lista.buscarPorCPF(cpf);
-            if (encontrado != NULL) {
-                lista.exibirAluno(encontrado->aluno);
-                cout << "Deseja remover este aluno? (s/n): ";
-                char resp;
-                cin >> resp;
-                if (resp == 's' || resp == 'S') {
-                    lista.remover(encontrado);
-                    cout << "Aluno removido.\n";
-                }
-            } else {
-                cout << "Aluno não encontrado.\n";
-            }
-        }
-        else if (opcao == 3) {
-            lista.exibirLista();
-        }
-    } while (opcao != 0);
+    clock_t fim = clock(); // fim da medição
+    double tempo_exec = double(fim - inicio) / CLOCKS_PER_SEC;
+
+    cout << "Tempo gasto para carregar e inserir: " << tempo_exec << " segundos\n";
+
+    // Exibir todos os alunos de todas as listas
+    for (int i = 0; i < 100; i++) {
+        if (i == 0) continue; // só para deixar mais limpo
+        cout << "\n--- Lista[" << i << "] ---\n";
+        vetor[i].exibirLista();
+    }
 
     return 0;
 }
